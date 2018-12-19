@@ -1,0 +1,17 @@
+
+<IfModule mod_rewrite.c>
+<IfModule mod_env.c>
+SetEnv HTTP_MOD_REWRITE On
+</IfModule>
+
+RewriteEngine On
+RewriteRule . - [E=REWRITEBASE:/]
+
+RewriteRule ^server/.*$ /server.php [L]
+RewriteRule ^client/.*$ /client.php [L]
+
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>

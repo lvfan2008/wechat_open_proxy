@@ -21,9 +21,13 @@ $openClient->setProxyClientInfo($client);
 $routeUri = explode("?", $_SERVER['REQUEST_URI'])[0];
 
 switch ($routeUri) {
-    case "/client/test/api":
+    case "/client/test/api/getips":
         {
-            $appId = 'wxb3195565de409776';
+            if (!isset($_GET['app_id'])) {
+                echo "app_id不存在，请在URL中添加已授权的app_id参数";
+                exit;
+            }
+            $appId = $_GET['app_id'];
             $result = $openClient->getAccount($appId, false)->base->getValidIps();
             print_r($result);
             break;

@@ -9,7 +9,8 @@ namespace WechatProxy\OpenPlatform\ProxyClient;
 
 use EasyWeChat\OpenPlatform\Application as EasyWeChatPlatform;
 use Psr\SimpleCache\InvalidArgumentException;
-use WechatProxy\OpenPlatform\Contract\Signature;
+use Symfony\Component\Cache\Simple\FilesystemCache;
+use WechatProxy\OpenPlatform\Support\Signature;
 use WechatProxy\OpenPlatform\Support\ProxyClientInfo;
 
 /**
@@ -71,6 +72,13 @@ class OpenProxyClient extends EasyWeChatPlatform
 
         parent::__construct($config, $prepends, $id);
 
+        $this['signature'] = function ($app) {
+            return new Signature($app);
+        };
+        $this['cache'] = function ($app) {
+            return new FilesystemCache("", 0, $app['config']->get("cache.path"));
+        };
+
         $this->access_token->setToken("invalid_token");
     }
 
@@ -88,7 +96,7 @@ class OpenProxyClient extends EasyWeChatPlatform
         } catch (InvalidArgumentException $e) {
         }
         $account['http_client'] = function ($app) use ($appId) {
-            $client = new OpenProxyHttpClient([], $app);
+            $client = new OpenProxyHttpClient([], $this);
             $client->setAccountAppId($appId);
             return $client;
         };
@@ -113,8 +121,21 @@ class OpenProxyClient extends EasyWeChatPlatform
      */
     public function verifySign($query)
     {
-        if ($this->proxyClientInfo != ($query['client_id'] ?? "")) return false;
+        if ($this->proxyClientInfo->clientId != ($query['client_id'] ?? "")) return false;
         return $this->signature->verifySign($this->proxyClientInfo->key, $query);
+    }
+
+    /**
+     * 签名
+     *
+     * @param array $query
+     * @return array
+     */
+    public function sign($query)
+    {
+        $query['client_id'] = $this->proxyClientInfo->clientId;
+        $query['sign'] = $this->signature->generateSign($this->proxyClientInfo->key, $query);
+        return $query;
     }
 
     /**
@@ -126,14 +147,14 @@ class OpenProxyClient extends EasyWeChatPlatform
         $data = [
             'client_id' => $this->proxyClientInfo->clientId,
             'cb_url' => $this->proxyClientInfo->cbUrl,
-            'param' => $param,
+            'param' => json_encode($param),
         ];
         $data['sign'] = $this->signature->generateSign($this->proxyClientInfo->key, $data);
         $query = [
             'client_param' => base64_encode(json_encode($data)),
         ];
-        $proxyServerAuthUrl = $this->app['config']->get('proxy_auth_url');
-        return "http://{$proxyServerAuthUrl}?" . http_build_query($query);
+        $proxyServerAuthUrl = $this['config']->get('proxy_auth_url');
+        return $proxyServerAuthUrl . "?" . http_build_query($query);
     }
 
     /**
@@ -143,7 +164,7 @@ class OpenProxyClient extends EasyWeChatPlatform
     {
         $content = file_get_contents('php://input');
         $message = json_decode($content, true);
-        $this->app['logger']->debug("ProxyClient onComponentEvent receive message: " . print_r($message, true));
+        $this->logger->debug("ProxyClient onComponentEvent receive message: " . print_r($message, true));
         echo "success";
     }
 
@@ -157,7 +178,7 @@ class OpenProxyClient extends EasyWeChatPlatform
     {
         $content = file_get_contents('php://input');
         $message = json_decode($content, true);
-        $this->app['logger']->debug("ProxyClient onAppEvent receive {$appId} message: " . print_r($message, true));
+        $this->logger->debug("ProxyClient onAppEvent receive {$appId} message: " . print_r($message, true));
         echo "success";
     }
 

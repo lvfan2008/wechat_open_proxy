@@ -101,7 +101,7 @@ class OpenPlatform extends EasyWeChatPlatform
             $that = $this;
             $server->push(function ($message) use ($that, &$replyMessage, &$authCode, &$receiveMessage) {
                 $receiveMessage = $message;
-                $this->logger->debug("receive message: " . print_r($message, true));
+                $this->logger->debug("receive message: " . json_encode($message));
                 if ($message['MsgType'] == "event") {
                     $replyMessage = $message['Event'] . "from_callback";
                 } else if ($message['MsgType'] == "text" && "TESTCOMPONENT_MSG_TYPE_TEXT" == $message['Content']) {
@@ -115,10 +115,10 @@ class OpenPlatform extends EasyWeChatPlatform
             });
             $response = $server->serve();
             $response->send();
-            $this->logger->debug("send replyMessage: " . print_r($replyMessage, true));
+            $this->logger->debug("send replyMessage: ", $replyMessage);
 
             if ($authCode) {
-                $this->logger->debug("receive authCode: " . print_r($authCode, true));
+                $this->logger->debug("receive authCode: " . $authCode);
                 $account = $this->getAccount($appId);
                 $message = [
                     'touser' => $receiveMessage['FromUserName'],
@@ -126,7 +126,7 @@ class OpenPlatform extends EasyWeChatPlatform
                     'text' => ['content' => $authCode . "_from_api"]
                 ];
                 $result = $account->customer_service->send($message);
-                $this->logger->debug("customer_service->send " . $authCode . "_from_api result:" . print_r($result, true));
+                $this->logger->debug("customer_service->send " . $authCode . "_from_api result:" . json_encode($result));
             }
         } catch (\Exception $e) {
             $this->logger->error("globalTest error " . $e->getMessage());
@@ -201,8 +201,6 @@ class OpenPlatform extends EasyWeChatPlatform
             $account = $this->officialAccount($appId, $tokenInfo['authorizer_refresh_token']);
         }
         try {
-            if (!$this->isTokenExpired($tokenInfo))
-                $account->access_token->setToken($tokenInfo['authorizer_access_token'], time() - $tokenInfo['time']);
             $newTokenInfo = $account->access_token->getToken();
             if (isset($newTokenInfo['authorizer_refresh_token'])) {
                 $newTokenInfo['time'] = time();

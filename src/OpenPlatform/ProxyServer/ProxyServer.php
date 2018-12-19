@@ -8,18 +8,26 @@
 namespace WechatProxy\OpenPlatform\ProxyServer;
 
 
+use Symfony\Component\Cache\Simple\FilesystemCache;
+use WechatProxy\OpenPlatform\Support\ClientRepository;
+use WechatProxy\OpenPlatform\Support\Signature;
+
 class ProxyServer extends WechatProxy
 {
-    protected $baseUri = "";
 
-    /**
-     * @param string $baseUri
-     */
-    public function setBaseUri(string $baseUri)
+    public function __construct(array $config = [], array $prepends = [], string $id = null)
     {
-        $this->baseUri = $baseUri;
+        parent::__construct($config, $prepends, $id);
+        $this['cache'] = function ($app) {
+            return new FilesystemCache("", 0, $app['config']->get("cache.path"));
+        };
+        $this['signature'] = function ($app) {
+            return new Signature($app);
+        };
+        $this['clientRepository'] = function ($app) {
+            return new ClientRepository($app);
+        };
     }
-
 
     /**
      * 显示授权页面
@@ -27,7 +35,7 @@ class ProxyServer extends WechatProxy
     public function showAuth()
     {
         if ($this->verifyAuthUrl()) {
-            $authUrl = $this->baseUri . "/proxy/auth/start?" . http_build_query($_GET);
+            $authUrl = $this['config']->get("base_uri") . "/proxy/auth/start?" . http_build_query($_GET);
             $html = <<<EOF
 <html>
 <head>
@@ -87,7 +95,7 @@ EOF;
     public function startAuthorization()
     {
         if ($this->verifyAuthUrl()) {
-            $authUrl = $this->getPreAuthorizationUrl("{$this->baseUri}/proxy/auth/callback?" . http_build_query($_GET));
+            $authUrl = $this->getPreAuthorizationUrl($this['config']->get("base_uri") . "/proxy/auth/callback?" . http_build_query($_GET));
             header("Location: {$authUrl}");
             exit;
         } else {
@@ -113,10 +121,13 @@ EOF;
         $params = $this->parseParam($_GET['client_param']);
         $authInfo = $this->handleAuthorize();
         $this->onAuthCb($authInfo);
-        $_GET['type'] = 'auth_callback';
-        $_GET['app_id'] = $authInfo['authorization_info']['authorizer_appid'];
+        $query = [
+            'type' => 'auth_callback',
+            'client_param' => $_GET['client_param'],
+            'app_id' => $authInfo['authorization_info']['authorizer_appid']
+        ];
         $this->clientRepository->attach($_GET['app_id'], $params['client_id']);
-        $url = $params["cb_url"] . "?" . http_build_query($_GET);
+        $url = $params["cb_url"] . "?" . http_build_query($query);
         header("Location: {$url}");
         exit;
     }

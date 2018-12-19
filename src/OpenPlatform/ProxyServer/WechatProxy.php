@@ -9,6 +9,7 @@ namespace WechatProxy\OpenPlatform\ProxyServer;
 
 
 use EasyWeChat\Kernel\Decorators\TerminateResult;
+use EasyWeChat\Kernel\Support\Str;
 use Psr\SimpleCache\InvalidArgumentException;
 use EasyWeChat\Kernel\Exceptions;
 use EasyWeChat\Kernel\AccessToken;
@@ -76,17 +77,42 @@ class WechatProxy extends OpenPlatform
         if (!empty($result)) {
             return $this->outputJson($body);
         }
-
+        $newHeaders = [];
         foreach ($headers as $name => $value) {
-            if (strtolower($name) == "host" || strtolower($name) == 'user-agent') continue;
-            if (strtolower($name) == "content-length") $value = strlen($body);
-            $headers[] = $name . ": " . implode("; ", $value);
+            if (strtoupper($name) == "HOST" || strtoupper($name) == 'USER_AGENT' || strtoupper($name) == 'MOD_REWRITE') continue;
+            if (strtoupper($name) == "CONTENT_LENGTH") $value = strlen($body);
+            $name = array_map(function ($value) {
+                return ucwords(strtolower($value));
+            }, explode("_", $name));
+            $name = implode("-", $name);
+            $newHeaders[] = $name . ": " . $value;
         }
 
-        $url = $apiUrl . ($query ? "?" . http_build_query($query) : "");
-        $this->logger->debug("request url {$apiUrl}, headers: " . json_encode($headers));
+        $retry = 0;
+        while ($retry < 2) {
+            $retry++;
+            !isset($query['component_access_token']) || $query['component_access_token'] = $this->getToken($this->access_token);
+            !isset($query['access_token']) || $query['access_token'] = $this->getToken($this->getAccount($appId)->access_token);
 
-        list($outHeader, $body) = $this->httpRequest($url, $_SERVER['REQUEST_METHOD'], $body, $headers);
+            $url = $apiUrl . ($query ? "?" . http_build_query($query) : "");
+            $this->logger->debug("request url {$apiUrl}, headers: " . print_r($newHeaders, true));
+            list($outHeader, $body) = $this->httpRequest($url, $_SERVER['REQUEST_METHOD'], $body, $newHeaders);
+            $isJson = (stripos($outHeader, "Content-Type: application/json") !== false);
+            if (!$isJson) break;
+
+            $result = json_decode($body, true);
+            if (!empty($result['errcode']) && in_array(abs($result['errcode']), [40001, 40014, 42001], true)) {
+                if ($appId) {
+                    $this->getAccount($appId)->access_token->refresh();
+                } else {
+                    $this->access_token->refresh();
+                }
+                $this->logger->debug('Retrying with refreshed access token.');
+                continue;
+            } else {
+                break;
+            }
+        }
         $outHeaders = explode("\n", $outHeader);
         foreach ($outHeaders as $outHeader) {
             if ($outHeader = trim($outHeader))
@@ -229,7 +255,7 @@ class WechatProxy extends OpenPlatform
                 $data = $type == 0 ? json_decode($content, true) : GuzzleHttp\Psr7\parse_query($content);
                 if (isset($data['component_appid'])) {
                     $data['component_appid'] = $this['config']['app_id'];
-                    $body = $type == 1 ? json_encode($data) : http_build_query($data);
+                    $body = $type == 0 ? json_encode($data) : http_build_query($data);
                     $this->logger->debug("proxy replaced request body: {$body} ");
                     return $body;
                 }
@@ -303,7 +329,7 @@ class WechatProxy extends OpenPlatform
     {
         try {
             $token = $accessToken->getToken();
-            $this->logger->debug("access token:" . print_r($token, true));
+//            $this->logger->debug("access token:" . print_r($token, true));
             return $token[$accessToken->getTokenKey()];
         } catch (Exceptions\HttpException $e) {
             return [$e->getCode(), $e->getMessage()];
@@ -318,10 +344,23 @@ class WechatProxy extends OpenPlatform
 
     public function verifySign()
     {
-        if (!isset($_GET['client_id'])) return false;
-        $client = $this->clientRepository->getClient($_GET['client_id']);
-        if (!$client) return false;
-        return $this->signature->verifySign($client->key, $_GET);
+        $query = $_GET;
+        if (!isset($query['client_id'])) {
+            $this->logger->debug('client_id parameter not found!');
+            return false;
+        }
+        $client = $this->clientRepository->getClient($query['client_id']);
+        if (!$client) {
+            $this->logger->debug('client_id info not found!');
+            return false;
+        }
+        $result = $this->signature->verifySign($client->key, $query);
+        if (!$result) {
+            unset($query['component_access_token']);
+            unset($query['access_token']);
+            return $this->signature->verifySign($client->key, $query);
+        }
+        return $result;
     }
 
     /**

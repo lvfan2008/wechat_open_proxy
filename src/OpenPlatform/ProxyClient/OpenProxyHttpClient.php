@@ -10,7 +10,6 @@ namespace WechatProxy\OpenPlatform\ProxyClient;
 
 use GuzzleHttp\Client;
 use function GuzzleHttp\Psr7\parse_query;
-use Pimple\Container;
 
 /**
  * 代理公众号或小程序的Client，请求时，加入http query参数account_app_id
@@ -22,11 +21,11 @@ class OpenProxyHttpClient extends Client
     protected $accountAppId = null;
 
     /**
-     * @var Container $app
+     * @var OpenProxyClient $app
      */
     protected $app;
 
-    public function __construct(array $config = [], Container $app)
+    public function __construct(array $config = [], OpenProxyClient $app)
     {
         parent::__construct($config);
         $this->app = $app;
@@ -49,13 +48,14 @@ class OpenProxyHttpClient extends Client
         if ($this->accountAppId)
             $options['query']['account_app_id'] = $this->accountAppId;
         if (!isset($options['base_uri'])) {
-            $options['query']['org_base_uri'] = "https://api.weixin.qq.com/";
+            $options['query']['ori_base_uri'] = "https://api.weixin.qq.com/";
         } else {
-            $options['query']['org_base_uri'] = strval($options['base_uri']);
+            $options['query']['ori_base_uri'] = strval($options['base_uri']);
         }
         $options['query']['ori_uri_path'] = $uri;
+        $options['query'] = $this->app->sign($options['query']);
         $options['base_uri'] = $this->app['config']->get("proxy_base_uri");
         $this->app['logger']->debug("ProxyClient request  option: " . json_encode($options));
-        return parent::request($method, $uri, $options);
+        return parent::request($method, "", $options);
     }
 }

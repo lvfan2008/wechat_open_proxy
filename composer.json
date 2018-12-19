@@ -17,7 +17,7 @@
   "require": {
     "php": ">=7.0",
     "overtrue/wechat": "~4.0",
-    "slim/slim": "^3.0"
+    "vlucas/phpdotenv": "^2.5"
   },
   "require-dev": {
     "mockery/mockery": "^1.0",

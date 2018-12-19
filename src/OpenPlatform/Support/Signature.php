@@ -7,7 +7,6 @@
 
 namespace WechatProxy\OpenPlatform\Support;
 
-use EasyWeChat\Kernel\ServiceContainer;
 use Pimple\Container;
 use WechatProxy\OpenPlatform\Contract\Signature as ISignature;
 
@@ -50,8 +49,8 @@ class Signature implements ISignature
         $keys = array_keys($query);
         sort($keys, SORT_STRING);
         $values = "";
-        foreach ($keys as $key) {
-            $values .= $query[$key];
+        foreach ($keys as $k) {
+            $values .= $query[$k];
         }
         return sha1($key . $values);
     }

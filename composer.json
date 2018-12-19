@@ -8,6 +8,9 @@
     "sdk"
   ],
   "license": "MIT",
+  "type": "library",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "authors": [
     {
       "name": "lv_fan2008",

@@ -9,6 +9,7 @@
 namespace WechatProxy\OpenPlatform\ProxyServer;
 
 use EasyWeChat\Kernel\Decorators\TerminateResult;
+use EasyWeChat\Kernel\Messages\Text;
 use EasyWeChat\Kernel\Traits\InteractsWithCache;
 use EasyWeChat\OpenPlatform\Application as EasyWeChatPlatform;
 use EasyWeChat\OpenPlatform\Authorizer\OfficialAccount\OAuth\ComponentDelegate;
@@ -34,14 +35,14 @@ class OpenPlatform extends EasyWeChatPlatform
         $server = $this->server;
         try {
             $server->push(function ($message) {
-                $this->logger->debug("receiveComponentEvent: " . print_r($message, true));
+                $this->logger->debug("OpenPlatform: receiveComponentEvent: " . print_r($message, true));
                 if ($message['InfoType'] != 'component_verify_ticket')
                     $this->processComponentEvent($message);
             });
             $response = $server->serve();
             $response->send();
         } catch (\Exception $e) {
-            $this->logger->error("onComponentCallBack exception, message: " . $e->getMessage());
+            $this->logger->error("OpenPlatform: onComponentCallBack exception, message: " . $e->getMessage());
         }
     }
 
@@ -59,13 +60,13 @@ class OpenPlatform extends EasyWeChatPlatform
         $account = $this->getAccount($appId);
         try {
             $account->server->push(function ($message) use ($appId) {
-                $this->logger->debug("receiveAppEvent: {$appId} " . print_r($message, true));
+                $this->logger->debug("OpenPlatform: receiveAppEvent: {$appId} " . print_r($message, true));
                 return $this->processAppEvent($appId, $message);
             });
             $response = $account->server->serve();
             $response->send();
         } catch (\Exception $e) {
-            $this->logger->error("onAppEventCallBack exception, message: " . $e->getMessage());
+            $this->logger->error("OpenPlatform: onAppEventCallBack exception, message: " . $e->getMessage());
         }
     }
 
@@ -101,7 +102,6 @@ class OpenPlatform extends EasyWeChatPlatform
             $that = $this;
             $server->push(function ($message) use ($that, &$replyMessage, &$authCode, &$receiveMessage) {
                 $receiveMessage = $message;
-                $this->logger->debug("receive message: " . json_encode($message));
                 if ($message['MsgType'] == "event") {
                     $replyMessage = $message['Event'] . "from_callback";
                 } else if ($message['MsgType'] == "text" && "TESTCOMPONENT_MSG_TYPE_TEXT" == $message['Content']) {
@@ -112,13 +112,17 @@ class OpenPlatform extends EasyWeChatPlatform
                     $this->onAuthCb($authInfo);
                     $replyMessage = "";
                 }
+                return new TerminateResult(new Text($replyMessage));
             });
             $response = $server->serve();
+            $this->logger->debug("OpenPlatform: Receive message: " . json_encode($receiveMessage));
+
+            $this->logger->debug("OpenPlatform: Send replyMessage: " . $replyMessage);
             $response->send();
-            $this->logger->debug("send replyMessage: ", $replyMessage);
+
 
             if ($authCode) {
-                $this->logger->debug("receive authCode: " . $authCode);
+                $this->logger->debug("OpenPlatform: receive authCode: " . $authCode);
                 $account = $this->getAccount($appId);
                 $message = [
                     'touser' => $receiveMessage['FromUserName'],
@@ -126,10 +130,10 @@ class OpenPlatform extends EasyWeChatPlatform
                     'text' => ['content' => $authCode . "_from_api"]
                 ];
                 $result = $account->customer_service->send($message);
-                $this->logger->debug("customer_service->send " . $authCode . "_from_api result:" . json_encode($result));
+                $this->logger->debug("OpenPlatform: customer_service->send " . $authCode . "_from_api result:" . json_encode($result));
             }
         } catch (\Exception $e) {
-            $this->logger->error("globalTest error " . $e->getMessage());
+            $this->logger->error("OpenPlatform: globalTest error " . $e->getMessage());
         }
         return true;
 
@@ -154,7 +158,7 @@ class OpenPlatform extends EasyWeChatPlatform
             "time" => time(),
         ];
         $result = $this->setTokenCache($appId, $tokenInfo);
-        $this->logger->debug("onAuthCb setTokenCache result = $result , $appId : " . print_r($tokenInfo, true));
+        $this->logger->debug("OpenPlatform: onAuthCb setTokenCache result = $result , $appId : " . print_r($tokenInfo, true));
         return $authorizer;
     }
 
@@ -201,7 +205,12 @@ class OpenPlatform extends EasyWeChatPlatform
             $account = $this->officialAccount($appId, $tokenInfo['authorizer_refresh_token']);
         }
         try {
-            $newTokenInfo = $account->access_token->getToken();
+            if ($this->isTokenExpired($tokenInfo)) {
+                $newTokenInfo = $account->access_token->getToken(true);
+            } else {
+                $account->access_token->setToken($tokenInfo['authorizer_access_token'], time() - $tokenInfo['time'] - 500);
+                $newTokenInfo = $account->access_token->getToken();
+            }
             if (isset($newTokenInfo['authorizer_refresh_token'])) {
                 $newTokenInfo['time'] = time();
                 $newTokenInfo['isMiniProgram'] = $tokenInfo['isMiniProgram'];
@@ -255,7 +264,7 @@ class OpenPlatform extends EasyWeChatPlatform
      */
     protected function isTokenExpired($tokenInfo)
     {
-        return time() - $tokenInfo['time'] + 500 > $tokenInfo['expires_in'];
+        return time() - 500 < $tokenInfo['time'] + $tokenInfo['expires_in'];
     }
 
     /**

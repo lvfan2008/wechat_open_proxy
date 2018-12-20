@@ -207,14 +207,11 @@ class OpenPlatform extends EasyWeChatPlatform
         try {
             if ($this->isTokenExpired($tokenInfo)) {
                 $newTokenInfo = $account->access_token->getToken(true);
-            } else {
-                $account->access_token->setToken($tokenInfo['authorizer_access_token'], time() - $tokenInfo['time'] - 500);
-                $newTokenInfo = $account->access_token->getToken();
-            }
-            if (isset($newTokenInfo['authorizer_refresh_token'])) {
                 $newTokenInfo['time'] = time();
                 $newTokenInfo['isMiniProgram'] = $tokenInfo['isMiniProgram'];
                 $this->setTokenCache($appId, $newTokenInfo);
+            } else {
+                $account->access_token->setToken($tokenInfo['authorizer_access_token'], time() - $tokenInfo['time'] - 500);
             }
         } catch (InvalidArgumentException $e) {
             $this->logger->error("getAccount({$appId}) exception: " . $e->getMessage());
